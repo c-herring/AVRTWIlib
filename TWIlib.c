@@ -1,16 +1,26 @@
 /*
  * TWIlib.c
  *
- *  Created: 6/01/2014 10:41:33 PM
- *  Author: Chris Herring
- */ 
+ * 3/13/2015 Chris Herring
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * The Software is provided "as is", without warranty of any kind.
+ */
 
 #include <avr/io.h>
 #include <avr/interrupt.h>
 #include "TWIlib.h"
 #include "util/delay.h"
-#include "FDCC_LCD.h"
+#include <string.h>
 
+// Initialize the TWI hardware. This function must be called before any other TWI functions can be used however it should be called after 
+// global interrupts have been enabled (a call to sei(); )
 void TWIInit()
 {
 	TWIInfo.mode = Ready;
@@ -24,6 +34,10 @@ void TWIInit()
 	TWCR = (1 << TWIE) | (1 << TWEN);
 }
 
+// Check the ready status of the TWI interface.
+// Returns:
+//		1	- TWI is ready to go.
+//		0	- TWI is not ready.
 uint8_t isTWIReady()
 {
 	if ( (TWIInfo.mode == Ready) | (TWIInfo.mode == RepeatedStartSent) )
@@ -36,12 +50,32 @@ uint8_t isTWIReady()
 	}
 }
 
+
+// TWITransmitData begins a TWI transmission. A hard coded buffer length of MAXBUFLEN is used for the transmit buffer.
+// If you require larger transmissions then this may be changed in the TWIlib.h header. This function accepts a void
+// pointer, which will then be cast to a uint8_t*. This allows any datatype to be sent one bute at a time.
+// As with any application, the programmer should ensure that dataLen is not longer than the data, or else this function
+// will attempt to index out of bounds.
+//
+// Inputs:
+//		TXdata	- Void pointer to the first byte of data stream to be sent.
+//		dataLen	- Length of the data in bytes. This must not exceed the hard coded TXMAXBUFLEN define.
+//		repStart- Should the device relinquish control of the bus after the transmission or should it send a 
+//					repeated start signal? 1 = send the repeated start; 0 = sent stop.
+//
+// Returns:
+//		0		- Transmission successfully started.
+//		1		- Attempted to send a data stream longer than MAXBUFLEN bytes.
+//					Split the data stream, compress it or increase MAXBUFLEN.
+//		2		- The TWI bus was not ready, no transmission has been started yet. Try again later.
+//
 uint8_t TWITransmitData(void *const TXdata, uint8_t dataLen, uint8_t repStart)
 {
 	if (dataLen <= TXMAXBUFLEN)
 	{
 		// Wait until ready
-		while (!isTWIReady()) {_delay_us(1);}
+		//while (!isTWIReady()) {_delay_us(1);}
+		if (!isTWIReady()) {return 2;}
 		// Set repeated start mode
 		TWIInfo.repStart = repStart;
 		// Copy data into the transmit buffer
@@ -76,10 +110,28 @@ uint8_t TWITransmitData(void *const TXdata, uint8_t dataLen, uint8_t repStart)
 	return 0;
 }
 
+// TWIReadData reads begins a master read operation. A write operation is usually performed before the read in order to 
+// set the slave up to transmit the desired data. This function takes a salve address, utilizes the transmit function to 
+// address the slave with the read bit set, then lets the interrupts do the rest of the work. The receive buffer length 
+// global variable is set to the number of bytes to read. The logic in the interrupt vector code will reply with ACK 
+// until there is only one more byte to read then reply with NACK. So it should be ensured that the number of bytes to read is 
+// correctly specified. If it is too long then the slave might stop sending and we enter the realm of undefined behavior. 
+// If a transmit failed due to the TWI module not being ready then this function will return a 2 and it should be handled in the 
+// same manner as the transmit function. It is assumed that the transmit function will never return 1, this can only happen if you have
+// the maximum transmit buffer length set to zero. If that is the case you should probably give up now.
+//
+// Inputs:
+//		TWIaddr		- The 7 bit address of the slave to read from. the 8th bit should be 0, but if it is not then it will be shifted
+//						out anyway. So it does not really matter.
+//		bytesToRead	- The number of bytes to read. Be careful this is not more than the slave knows how to send. Otherwise you may 
+//						encounter some undefined behavior.
+//		repStart	-	1 to send a repeated start signal after the transmission and maintain control of the bus.
+//						0 to send a stop signal after the transmission and relinquish control of the bus.
+//
 uint8_t TWIReadData(uint8_t TWIaddr, uint8_t bytesToRead, uint8_t repStart)
 {
 	// Check if number of bytes to read can fit in the RXbuffer
-	if (bytesToRead < RXMAXBUFLEN)
+	if (bytesToRead <= RXMAXBUFLEN)
 	{
 		// Reset buffer index and set RXBuffLen to the number of bytes to read
 		RXBuffIndex = 0;
@@ -89,13 +141,14 @@ uint8_t TWIReadData(uint8_t TWIaddr, uint8_t bytesToRead, uint8_t repStart)
 		// Shift the address and AND a 1 into the read write bit (set to write mode)
 		TXdata[0] = (TWIaddr << 1) | 0x01;
 		// Use the TWITransmitData function to initialize the transfer and address the slave
-		TWITransmitData(TXdata, 1, repStart);
+		if (TWITransmitData(TXdata, 1, repStart) == 2)
+			return 2;
 	}
 	else
 	{
-		return 0;
+		return 1;
 	}
-	return 1;
+	return 0;
 }
 
 ISR (TWI_vect)

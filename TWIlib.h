@@ -1,9 +1,17 @@
 /*
  * TWIlib.h
  *
- * Created: 6/01/2014 10:38:42 PM
- *  Author: Chris Herring
- */ 
+ * 3/13/2015 Chris Herring
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * The Software is provided "as is", without warranty of any kind.
+ */
 
 
 #ifndef TWILIB_H_
@@ -13,9 +21,9 @@
 // Get TWI status
 #define TWI_STATUS	(TWSR & 0xF8) 
 // Transmit buffer length
-#define TXMAXBUFLEN 20
+#define TXMAXBUFLEN 200
 // Receive buffer length
-#define RXMAXBUFLEN 20
+#define RXMAXBUFLEN 200
 // Global transmit buffer
 uint8_t TWITransmitBuffer[TXMAXBUFLEN];
 // Global receive buffer
